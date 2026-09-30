@@ -1,0 +1,68 @@
+name: XAUUSD AGI Quant Engine Automation
+
+on:
+  schedule:
+    # Run every 15 minutes during forex market hours (Monday 00:00 to Friday 22:00 UTC)
+    - cron: '*/15 * * * 1-5'
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force execute signal scan even if duplicated or low score (true/false)'
+        required: false
+        default: 'false'
+      custom_symbol:
+        description: 'Deriv symbol to trade'
+        required: false
+        default: 'frxXAUUSD'
+
+jobs:
+  run-quant-engine:
+    name: Execute Institutional Quant Signal Scanner
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install System and Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Restore AGI State Cache & Episodic Memory
+        uses: actions/cache@v4
+        with:
+          path: .state_cache
+          key: agi-state-cache-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            agi-state-cache-${{ runner.os }}-
+
+      - name: Execute Automated Quant Engine Scan
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
+          MIN_CONFLUENCE_SCORE: ${{ vars.MIN_CONFLUENCE_SCORE || '62.0' }}
+          MIN_SIGNAL_GRADE: ${{ vars.MIN_SIGNAL_GRADE || 'A' }}
+          MIN_PRECISION_SCORE: ${{ vars.MIN_PRECISION_SCORE || '68.0' }}
+          SIGNAL_COOLDOWN_MINUTES: ${{ vars.SIGNAL_COOLDOWN_MINUTES || '45' }}
+          FORCE_RUN: ${{ github.event.inputs.force_run || 'false' }}
+          REQUIRE_MTF_ALIGN: 'true'
+          SYMBOL_DERIV: ${{ github.event.inputs.custom_symbol || 'frxXAUUSD' }}
+        run: |
+          python main.py
+
+      - name: Save Updated Episodic Memory & Engine Tracker
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state_cache
+          key: agi-state-cache-${{ runner.os }}-${{ github.run_id }}
